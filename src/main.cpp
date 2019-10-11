@@ -1,10 +1,18 @@
 #include <Arduino.h>
 // usable pins D0,D1,D2,D5,D6,D7 (D10 is TX (GPIO1), D9 is RX (GPIO3), D3 is GPIO0, D4 is GPIO2, D8 is GPIO15)
-const int     FWD_PIN       = D0;
-const int     BWD_PIN       = D1;
-const int     OPT_PIN       = D2;
-
-const int     BUT_PIN       = D5;
+#ifdef NODEMCUV2
+const int     PWR_SW_PIN    = D0; // power button switch
+const int     BWD_SW_PIN    = D1; // backward button switch
+const int     FWD_CMD_PIN   = D5; // forward command pin
+const int     BWD_CMD_PIN   = D6; // backward command pin
+const int     OPT_SEN_PIN   = D7; // optical sensor pin
+#elif ESP12
+const int     PWR_SW_PIN    = 4;
+const int     BWD_SW_PIN    = 5;
+const int     FWD_CMD_PIN   = 12;
+const int     BWD_CMD_PIN   = 14;
+const int     OPT_SEN_PIN   = 16;
+#endif
 
 const size_t  CUT           = 0x00;
 const size_t  THROUGH       = 0x01;
@@ -31,11 +39,11 @@ void setup() {
   Serial.setTimeout(2000);
   while(!Serial){}
   Serial.println("Device started");
-  pinMode(BWD_PIN, OUTPUT);
-  pinMode(FWD_PIN, OUTPUT);
-  pinMode(OPT_PIN, INPUT);
-  pinMode(BUT_PIN, INPUT);
-  _lastStateRead = analogRead(OPT_PIN) < CUT_THRESHOLD ? CUT : THROUGH;
+  pinMode(BWD_CMD_PIN, OUTPUT);
+  pinMode(FWD_CMD_PIN, OUTPUT);
+  pinMode(OPT_SEN_PIN, INPUT);
+  pinMode(PWR_SW_PIN, INPUT);
+  _lastStateRead = analogRead(OPT_SEN_PIN) < CUT_THRESHOLD ? CUT : THROUGH;
 }
 
 void loop () {
@@ -63,7 +71,7 @@ void loop () {
         invertDirection();
         _lastFlipTime = millis();
       }
-      int read = analogRead(OPT_PIN);
+      int read = analogRead(OPT_SEN_PIN);
       boolean flipped;
       boolean cut;
       if (read < CUT_THRESHOLD) {
@@ -99,17 +107,22 @@ void loop () {
     if (_isRunning) {
       Serial.println("Stopping machine");
       stopMachine();
+      _steps = 0;
+      _revolutions = 0;
+      _isRunning = false;
+      _goingBackward = false;
+      _unstucking = false;
+      _lastStateRead = analogRead(OPT_SEN_PIN) < CUT_THRESHOLD ? CUT : THROUGH;
     }
-    delay(500);
-    _isRunning = false;
   }
+  delay(500);
 }
 
 void invertDirection() {
-  digitalWrite(!_goingBackward ? FWD_PIN : BWD_PIN, LOW);
+  digitalWrite(!_goingBackward ? FWD_CMD_PIN : BWD_CMD_PIN, LOW);
   Serial.print("Waiting machine to stop");
   wait(TURN_DELAY_SECONDS * 1000);
-  digitalWrite(!_goingBackward ? BWD_PIN : FWD_PIN, LOW);
+  digitalWrite(!_goingBackward ? BWD_CMD_PIN : FWD_CMD_PIN, HIGH);
   _goingBackward = !_goingBackward;
   if (_goingBackward) {
     Serial.println("Now running backward");
@@ -129,13 +142,13 @@ void wait (unsigned long t) {
 
 void startMachine() {
   Serial.println("Starting machine");
-  digitalWrite(FWD_PIN, HIGH);
+  digitalWrite(FWD_CMD_PIN, HIGH);
 }
 
 void stopMachine () {
   Serial.println("Stopping machine");
-  digitalWrite(FWD_PIN, LOW);
-  digitalWrite(BWD_PIN, LOW);
+  digitalWrite(FWD_CMD_PIN, LOW);
+  digitalWrite(BWD_CMD_PIN, LOW);
 }
 
 boolean becameStuck() {
@@ -143,5 +156,5 @@ boolean becameStuck() {
 }
 
 boolean machineStarted() {
-  return true;
+  return LOW == digitalRead(PWR_SW_PIN);
 }
